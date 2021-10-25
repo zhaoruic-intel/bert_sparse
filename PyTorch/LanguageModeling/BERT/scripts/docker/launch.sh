@@ -13,4 +13,6 @@ docker run -it --rm \
   -e LD_LIBRARY_PATH='/workspace/install/lib/' \
   -v $PWD:/workspace/bert \
   -v $PWD/results:/results \
+  --env https_proxy=http://proxy-us.intel.com:912 \
+  --env http_proxy=http://proxy-us.intel.com:911 \
   bert $CMD

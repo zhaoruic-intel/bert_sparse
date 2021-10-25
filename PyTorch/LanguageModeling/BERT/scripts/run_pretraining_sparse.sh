@@ -14,31 +14,61 @@
 # limitations under the License.
 
 echo "Container nvidia build = " $NVIDIA_BUILD_ID
-train_batch_size=${1:-8192}
-learning_rate=${2:-"6e-3"}
-precision=${3:-"fp16"}
-num_gpus=${4:-8}
-warmup_proportion=${5:-"0.2843"}
-train_steps=${6:-7038}
-save_checkpoint_steps=${7:-200}
-resume_training=${8:-"false"}
-create_logfile=${9:-"true"}
-accumulate_gradients=${10:-"true"}
-gradient_accumulation_steps=${11:-128}
-seed=${12:-12439}
-job_name=${13:-"bert_lamb_pretraining"}
-allreduce_post_accumulation=${14:-"true"}
-allreduce_post_accumulation_fp16=${15:-"true"}
-train_batch_size_phase2=${16:-4096}
-learning_rate_phase2=${17:-"4e-3"}
-warmup_proportion_phase2=${18:-"0.128"}
-train_steps_phase2=${19:-1563}
-gradient_accumulation_steps_phase2=${20:-512}
-DATASET=hdf5_lower_case_1_seq_len_128_max_pred_20_masked_lm_prob_0.15_random_seed_12345_dupe_factor_5/wikicorpus_en # change this for other datasets
-DATA_DIR_PHASE1=${21:-$BERT_PREP_WORKING_DIR/${DATASET}/}
+train_batch_size="8192"
+learning_rate="6e-3"
+precision="fp32"
+num_gpus=8
+warmup_proportion="0.2843"
+train_steps=7038
+save_checkpoint_steps=200
+resume_training="false"
+create_logfile="true"
+accumulate_gradients="true"
+gradient_accumulation_steps=128
+seed=42
+job_name="bert_lamb_pretraining"
+allreduce_post_accumulation="true"
+allreduce_post_accumulation_fp16="false"
+train_batch_size_phase2=4096
+learning_rate_phase2="4e-3"
+warmup_proportion_phase2="0.128"
+train_steps_phase2=1563
+gradient_accumulation_steps_phase2=512
+# DATASET=hdf5_lower_case_1_seq_len_128_max_pred_20_masked_lm_prob_0.15_random_seed_12345_dupe_factor_5_shard_1472_test_split_10/wiki_en_corpus/training # change this for other dataseBERT_PREP_WORKING_DIR=/raid/hengyume/data
+BERT_PREP_WORKING_DIR=./data
+DATA_DIR_PHASE1="$BERT_PREP_WORKING_DIR/${DATASET}/"
 BERT_CONFIG=bert_config.json
-DATASET2=hdf5_lower_case_1_seq_len_512_max_pred_80_masked_lm_prob_0.15_random_seed_12345_dupe_factor_5/wikicorpus_en # change this for other datasets
-DATA_DIR_PHASE2=${22:-$BERT_PREP_WORKING_DIR/${DATASET2}/}
+CODEDIR="/workspace/bert"
+init_checkpoint="None"
+# DATASET2=hdf5_lower_case_1_seq_len_512_max_pred_80_masked_lm_prob_0.15_random_seed_12345_dupe_factor_5_shard_1472_test_split_10/wiki_en_corpus/training # change this for other datasets
+DATASET2=hdf5_lower_case_1_seq_len_512_max_pred_80_masked_lm_prob_0.15_random_seed_12345_dupe_factor_5/wikicorpus_en
+DATA_DIR_PHASE2="$BERT_PREP_WORKING_DIR/${DATASET2}/"
+
+# train_batch_size=${1:-8192}
+# learning_rate=${2:-"6e-3"}
+# precision=${3:-"fp16"}
+# num_gpus=${4:-8}
+# warmup_proportion=${5:-"0.2843"}
+# train_steps=${6:-7038}
+# save_checkpoint_steps=${7:-200}
+# resume_training=${8:-"false"}
+# create_logfile=${9:-"true"}
+# accumulate_gradients=${10:-"true"}
+# gradient_accumulation_steps=${11:-128}
+# seed=${12:-12439}
+# job_name=${13:-"bert_lamb_pretraining"}
+# allreduce_post_accumulation=${14:-"true"}
+# allreduce_post_accumulation_fp16=${15:-"true"}
+# train_batch_size_phase2=${16:-4096}
+# learning_rate_phase2=${17:-"4e-3"}
+# warmup_proportion_phase2=${18:-"0.128"}
+# train_steps_phase2=${19:-1563}
+# gradient_accumulation_steps_phase2=${20:-512}
+# DATASET=hdf5_lower_case_1_seq_len_128_max_pred_20_masked_lm_prob_0.15_random_seed_12345_dupe_factor_5/wikicorpus_en # change this for other datasets
+# DATA_DIR_PHASE1=${21:-$BERT_PREP_WORKING_DIR/${DATASET}/}
+# BERT_CONFIG=bert_config.json
+# DATASET2=hdf5_lower_case_1_seq_len_512_max_pred_80_masked_lm_prob_0.15_random_seed_12345_dupe_factor_5/wikicorpus_en # change this for other datasets
+# DATA_DIR_PHASE2=${22:-$BERT_PREP_WORKING_DIR/${DATASET2}/}
 CODEDIR=${23:-"/workspace/bert"}
 init_checkpoint=${24:-"None"}
 RESULTS_DIR=$CODEDIR/results
@@ -103,7 +133,7 @@ fi
 
 echo $DATA_DIR_PHASE1
 INPUT_DIR=$DATA_DIR_PHASE1
-CMD=" $CODEDIR/run_pretraining.py"
+CMD=" $CODEDIR/run_pretraining_sparse.py"
 CMD+=" --input_dir=$DATA_DIR_PHASE1"
 CMD+=" --output_dir=$CHECKPOINTS_DIR"
 CMD+=" --config_file=$BERT_CONFIG"
@@ -136,16 +166,16 @@ if [ "$create_logfile" = "true" ] ; then
   printf "Logs written to %s\n" "$LOGFILE"
 fi
 
-set -x
-if [ -z "$LOGFILE" ] ; then
-   $CMD
-else
-   (
-     $CMD
-   ) |& tee $LOGFILE
-fi
+# set -x
+# if [ -z "$LOGFILE" ] ; then
+#    $CMD
+# else
+#    (
+#      $CMD
+#    ) |& tee $LOGFILE
+# fi
 
-set +x
+# set +x
 
 echo "finished pretraining"
 
@@ -200,9 +230,13 @@ CMD+=" $ALL_REDUCE_POST_ACCUMULATION"
 CMD+=" $ALL_REDUCE_POST_ACCUMULATION_FP16"
 CMD+=" --do_train --phase2 --resume_from_checkpoint --phase1_end_step=$train_steps"
 CMD+=" --json-summary ${RESULTS_DIR}/dllogger.json "
+CMD+=" --init_checkpoint ./checkpoints/bert_large_pretrained_amp.pt "
 
 CMD="python3 -m torch.distributed.launch --nproc_per_node=$num_gpus $CMD"
 
+echo "=========================================PHASE 2============================="
+echo $CMD
+echo "============================================================================="
 if [ "$create_logfile" = "true" ] ; then
   export GBS=$(expr $train_batch_size_phase2 \* $num_gpus)
   printf -v TAG "pyt_bert_pretraining_phase2_%s_gbs%d" "$precision" $GBS
